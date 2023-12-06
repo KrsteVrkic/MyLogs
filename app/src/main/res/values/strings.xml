@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">My Logs</string>
+    <string name="Log">Log</string>
+    <string name="Stats">Stats</string>
+    <string name="stats_per_day">Today</string>
+    <string name="stats_per_week">This Week</string>
+    <string name="stats_total">Total</string>
+    <string name="stats_reset">Reset</string>
+</resources>
