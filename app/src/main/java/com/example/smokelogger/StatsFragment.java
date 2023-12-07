@@ -15,11 +15,6 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import java.text.DateFormat;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Locale;
-
 public class StatsFragment extends Fragment {
 
     private DatabaseLogger dbLogger;
@@ -27,7 +22,6 @@ public class StatsFragment extends Fragment {
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-
         View view = inflater.inflate(R.layout.fragment_stats, container, false);
         dbLogger = new DatabaseLogger(requireContext());
 
@@ -36,9 +30,9 @@ public class StatsFragment extends Fragment {
         Button buttonTotal = view.findViewById(R.id.btnStatsTotal);
         Button buttonReset = view.findViewById(R.id.btnStatsReset);
 
-        buttonDay.setOnClickListener(v -> displayStats(view, Events.SMOKE_BREAK, "Days"));
-        buttonWeek.setOnClickListener(v -> displayStats(view, Events.SMOKE_BREAK, "Weeks"));
-        buttonTotal.setOnClickListener(v -> displayStats(view, Events.SMOKE_BREAK, "Total"));
+        buttonDay.setOnClickListener(v -> displayStats(view, "Days"));
+        buttonWeek.setOnClickListener(v -> displayStats(view, "Weeks"));
+        buttonTotal.setOnClickListener(v -> displayStats(view, "Total"));
         buttonReset.setOnClickListener(v -> showResetConfirmationDialog());
 
         return view;
@@ -51,22 +45,17 @@ public class StatsFragment extends Fragment {
         builder.setMessage("Reset all logs?");
         builder.setPositiveButton("Yes", (dialog, which) -> resetDb(requireContext()));
         builder.setNegativeButton("No", (dialog, which) -> dialog.dismiss());
-
         AlertDialog dialog = builder.create();
         dialog.show();
     }
 
-    private String getCurrentDate() {
-        return DateFormat.getDateInstance(DateFormat.DEFAULT, Locale.getDefault()).format(new Date());
-    }
-
-    private void displayStats(View view, Events event, String timePeriod) {
+    private void displayStats(View view, String timePeriod) {
         if ("Days".equals(timePeriod)) {
-            displayStatsForAllDays(view, event);
+            displayStatsForAllDays(view);
         } else if ("Weeks".equals(timePeriod)) {
-            displayStatsForAllWeeks(view, event);
+            displayStatsForAllWeeks(view);
         } else {
-            displayTotalStats(view, event);
+            displayTotalStats(view, Events.SMOKE_BREAK);
         }
     }
 
@@ -77,8 +66,8 @@ public class StatsFragment extends Fragment {
         String query = "SELECT COUNT(DISTINCT date) AS totalDays, COUNT(DISTINCT strftime('%W', date)) AS totalWeeks, " +
                 "COUNT(*) / COUNT(DISTINCT date) AS avgSmokesPerDay, COUNT(*) / COUNT(DISTINCT strftime('%W', date)) AS avgSmokesPerWeek " +
                 "FROM log_table WHERE event = ?";
-        String[] selectionArgs = {event.toString()};
 
+        String[] selectionArgs = {event.name()};
         Cursor cursor = db.rawQuery(query, selectionArgs);
 
         if (cursor != null) {
@@ -90,9 +79,9 @@ public class StatsFragment extends Fragment {
                     int avgSmokesPerWeek = cursor.getInt(3);
 
                     result.append("Total Days: ").append(totalDays).append("\n");
-                    result.append("Total Weeks: ").append(totalWeeks).append("\n");
-                    result.append("Average Smokes Per Day: ").append(avgSmokesPerDay).append("\n");
-                    result.append("Average Smokes Per Week: ").append(avgSmokesPerWeek).append("\n");
+                    result.append("Total Weeks: ").append(totalWeeks).append("\n\n");
+                    result.append("Average Smoke Breaks Per Day: ").append(avgSmokesPerDay).append("\n\n");
+                    result.append("Average Smoke Breaks Per Week: ").append(avgSmokesPerWeek).append("\n\n");
                 }
             } finally {
                 cursor.close();
@@ -104,21 +93,38 @@ public class StatsFragment extends Fragment {
     }
 
 
-    private void displayStatsForAllDays(View view, Events event) {
+    private void displayStatsForAllDays(View view) {
         StringBuilder result = new StringBuilder();
 
         SQLiteDatabase db = dbLogger.getReadableDatabase();
-        String query = "SELECT date, COUNT(*) FROM log_table WHERE event = ? GROUP BY date";
-        String[] selectionArgs = {event.toString()};
+        String query = "SELECT date, event, COUNT(*) AS event_count FROM log_table GROUP BY date, event";
 
-        Cursor cursor = db.rawQuery(query, selectionArgs);
+        Cursor cursor = db.rawQuery(query, null);
 
         if (cursor != null) {
             try {
+                String currentDate = null;
+
                 while (cursor.moveToNext()) {
                     String date = cursor.getString(0);
-                    int eventCount = cursor.getInt(1);
-                    result.append(date).append(": ").append(eventCount).append(" ").append(event.toString()).append("\n");
+                    Events event = Events.valueOf(cursor.getString(1));
+                    int eventCount = cursor.getInt(2);
+
+                    if (!date.equals(currentDate)) {
+                        if (currentDate != null) {
+                            result.append("\n");
+                        }
+                        result.append("Date: ").append(date).append("\n\n");
+                        currentDate = date;
+                    }
+                    if (event.equals(Events.LATE)) {
+                        result.append(getSpecificEvent(event));
+                    } else if (event.equals(Events.WORK_HOME)) {
+                        result.append(getSpecificEvent(event));
+                    } else {
+                        result.append(getSpecificEvent(event)).append(": ").append(eventCount).append("\n");
+                    }
+
                 }
             } finally {
                 cursor.close();
@@ -129,21 +135,43 @@ public class StatsFragment extends Fragment {
         eventCountText.setText(result.toString());
     }
 
-    private void displayStatsForAllWeeks(View view, Events event) {
+    private String getSpecificEvent(Events event) {
+        switch (event) {
+            case LATE:
+                return "Was late to work\n";
+            case WORK_HOME:
+                return "Working @Home\n";
+            default:
+                return event.toString();
+        }
+    }
+
+    private void displayStatsForAllWeeks(View view) {
         StringBuilder result = new StringBuilder();
 
         SQLiteDatabase db = dbLogger.getReadableDatabase();
-        String query = "SELECT strftime('%W', date) AS week, COUNT(*) FROM log_table WHERE event = ? GROUP BY week";
-        String[] selectionArgs = {event.toString()};
+        String query = "SELECT strftime('%W', date) AS week, event, COUNT(*) AS eventCount FROM log_table GROUP BY week, event";
 
-        Cursor cursor = db.rawQuery(query, selectionArgs);
+        Cursor cursor = db.rawQuery(query, null);
 
         if (cursor != null) {
             try {
+                String currentWeek = null;
+
                 while (cursor.moveToNext()) {
                     String weekNumber = cursor.getString(0);
-                    int eventCount = cursor.getInt(1);
-                    result.append("Week ").append(weekNumber).append(": ").append(eventCount).append(" ").append(event.toString()).append("\n");
+                    Events event = Events.valueOf(cursor.getString(1));
+                    int eventCount = cursor.getInt(2);
+
+                    if (!weekNumber.equals(currentWeek)) {
+                        if (currentWeek != null) {
+                            result.append("\n");
+                        }
+                        result.append("Week ").append(weekNumber).append(":\n\n");
+                        currentWeek = weekNumber;
+                    }
+
+                    result.append(event.toString()).append(": ").append(eventCount).append("\n");
                 }
             } finally {
                 cursor.close();
@@ -153,6 +181,7 @@ public class StatsFragment extends Fragment {
         TextView eventCountText = view.findViewById(R.id.textView_stats);
         eventCountText.setText(result.toString());
     }
+
 
     private void resetDb(Context context) {
 
@@ -162,14 +191,4 @@ public class StatsFragment extends Fragment {
         db.execSQL(query);
         Toast.makeText(context, "Logs Deleted", Toast.LENGTH_SHORT).show();
     }
-
-
-    private String getStartOfWeek() {
-        Calendar cal = Calendar.getInstance();
-        cal.set(Calendar.DAY_OF_WEEK, cal.getFirstDayOfWeek());
-        DateFormat dateFormat = DateFormat.getDateInstance(DateFormat.DEFAULT, Locale.getDefault());
-        return dateFormat.format(cal.getTime());
-    }
-
-
 }

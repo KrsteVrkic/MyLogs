@@ -20,7 +20,7 @@
                 android:layout_height="wrap_content"
                 android:id="@+id/textView_stats"
                 android:textColor="@color/lavender"
-                android:textSize="18sp"
+                android:textSize="30sp"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
